@@ -1,0 +1,137 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>FBX File Loader with Manual Control</title>
+    <meta charset="UTF-8">
+    <meta http-equiv="X-UA-Compatible" content="IE=edge">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <script src="https://cdn.jsdelivr.net/npm/three@0.132.2/build/three.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.132.2/examples/js/libs/fflate.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.132.2/examples/js/loaders/FBXLoader.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.132.2/examples/js/controls/OrbitControls.js"></script>
+    <style>
+        body {
+            margin: 0;
+            overflow: hidden;
+        }
+        #buttonContainer {
+            position: absolute;
+            top: 20px;
+            left: 20px;
+            padding: 10px;
+            background-color: rgba(255, 255, 255, 0.8);
+            border-radius: 8px;
+            z-index: 10;
+        }
+        .slider-container {
+            margin-bottom: 10px;
+        }
+    </style>
+</head>
+<body>
+    <div id="buttonContainer">
+        <div class="slider-container">
+            <label for="hemisphereIntensity">Hemisphere Light Intensity:</label>
+            <input type="range" id="hemisphereIntensity" min="0" max="2" step="0.1" value="1">
+        </div>
+        <div class="slider-container">
+            <label for="directionalIntensity">Directional Light Intensity:</label>
+            <input type="range" id="directionalIntensity" min="0" max="2" step="0.1" value="1">
+        </div>
+        <div class="slider-container">
+            <label for="directionalColor">Directional Light Color:</label>
+            <input type="color" id="directionalColor" value="#ffffff">
+        </div>
+    </div>
+    <script>
+        let scene, camera, renderer, mixer, clock;
+        let hemisphereLight, directionalLight;
+
+        function init() {
+            scene = new THREE.Scene();
+            scene.background = new THREE.Color(0xdddddd);
+
+            camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 50000);
+            camera.position.set(0, 150, 300);
+
+            hemisphereLight = new THREE.HemisphereLight(0xffffff, 0x444444, 1.0);
+            hemisphereLight.position.set(0, 200, 0);
+            scene.add(hemisphereLight);
+
+            directionalLight = new THREE.DirectionalLight(0xffffff, 1.0);
+            directionalLight.position.set(0, 200, 100);
+            scene.add(directionalLight);
+
+            renderer = new THREE.WebGLRenderer({ antialias: true });
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            document.body.appendChild(renderer.domElement);
+
+            const controls = new THREE.OrbitControls(camera, renderer.domElement);
+            controls.addEventListener('change', render);
+
+            clock = new THREE.Clock();
+
+            const fbxLoader = new THREE.FBXLoader();
+            fbxLoader.load('./FPRumahAdat.fbx', (object) => {
+                object.scale.set(0.2, 0.2, 0.2); // Sesuaikan skala model jika terlalu besar/kecil
+                scene.add(object);
+
+                if (object.animations.length > 0) {
+                    mixer = new THREE.AnimationMixer(object);
+                    const action = mixer.clipAction(object.animations[0]);
+                    action.play();
+                }
+
+                render();
+            }, undefined, (error) => {
+                console.error('Error loading FBX:', error);
+            });
+
+            window.addEventListener('resize', onWindowResize);
+            animate();
+            addLightControls();
+        }
+
+        function onWindowResize() {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        }
+
+        function animate() {
+            requestAnimationFrame(animate);
+
+            const delta = clock.getDelta();
+            if (mixer) mixer.update(delta); // Update animasi jika ada
+
+            renderer.render(scene, camera);
+        }
+
+        function render() {
+            renderer.render(scene, camera);
+        }
+
+        function addLightControls() {
+            const hemisphereIntensitySlider = document.getElementById('hemisphereIntensity');
+            hemisphereIntensitySlider.addEventListener('input', (e) => {
+                hemisphereLight.intensity = e.target.value;
+                render();
+            });
+
+            const directionalIntensitySlider = document.getElementById('directionalIntensity');
+            directionalIntensitySlider.addEventListener('input', (e) => {
+                directionalLight.intensity = e.target.value;
+                render();
+            });
+
+            const directionalColorPicker = document.getElementById('directionalColor');
+            directionalColorPicker.addEventListener('input', (e) => {
+                directionalLight.color.set(e.target.value);
+                render();
+            });
+        }
+
+        init();
+    </script>
+</body>
+</html>
