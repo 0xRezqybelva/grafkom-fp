@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html>
 <head>
-    <title>FBX File Loader with Manual Control</title>
+    <title>FBX Animation and Lighting Control</title>
     <meta charset="UTF-8">
     <meta http-equiv="X-UA-Compatible" content="IE=edge">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -23,36 +23,73 @@
             border-radius: 8px;
             z-index: 10;
         }
-        .slider-container {
-            margin-bottom: 10px;
+        .slider-container, .color-container, .button-container {
+            margin-top: 10px;
+        }
+        input[type="range"] {
+            width: 100%;
+        }
+        button {
+            padding: 8px 16px;
+            margin: 4px;
+            font-size: 14px;
+            cursor: pointer;
         }
     </style>
 </head>
 <body>
     <div id="buttonContainer">
         <div class="slider-container">
+            <label for="ambientIntensity">Ambient Light Intensity:</label>
+            <input type="range" id="ambientIntensity" min="0" max="2" step="0.1" value="1">
+        </div>
+        <div class="color-container">
+            <label for="ambientColor">Ambient Light Color:</label>
+            <input type="color" id="ambientColor" value="#ffffff">
+        </div>
+        <div class="slider-container">
             <label for="hemisphereIntensity">Hemisphere Light Intensity:</label>
             <input type="range" id="hemisphereIntensity" min="0" max="2" step="0.1" value="1">
         </div>
-        <div class="slider-container">
-            <label for="directionalIntensity">Directional Light Intensity:</label>
-            <input type="range" id="directionalIntensity" min="0" max="2" step="0.1" value="1">
+        <div class="color-container">
+            <label for="hemisphereColor">Hemisphere Light Color:</label>
+            <input type="color" id="hemisphereColor" value="#ffffff">
+        </div>
+        <div class="button-container">
+            <button id="playButton">Play Animation</button>
+            <button id="stopButton">Stop Animation</button>
         </div>
         <div class="slider-container">
-            <label for="directionalColor">Directional Light Color:</label>
-            <input type="color" id="directionalColor" value="#ffffff">
+            <label for="animationSpeed">Animation Speed:</label>
+            <input type="range" id="animationSpeed" min="0.1" max="2" step="0.1" value="1">
+        </div>
+        <div class="slider-container">
+            <label for="cameraSpeed">Camera Panning Speed:</label>
+            <input type="range" id="cameraSpeed" min="0.01" max="0.1" step="0.01" value="0.02">
         </div>
     </div>
     <script>
-        let scene, camera, renderer, mixer, clock;
-        let hemisphereLight, directionalLight;
+        let scene, camera, renderer, mixer, clock, animationAction;
+        let ambientLight, hemisphereLight, directionalLight;
+        const initialCameraPosition = new THREE.Vector3(0, 150, 300); // Posisi awal kamera
+        const cameraTargetPosition = new THREE.Vector3(0, 100, 200); // Target posisi kamera
+        let cameraMoving = false; // Status apakah kamera sedang bergerak
+        let isPanning = false; // Status apakah kamera sedang melakukan panning
+        let cameraAngle = 0; // Sudut awal kamera dalam radian
+        let cameraRadius = 900; // Radius lintasan panning kamera
+        let cameraSpeed = 0.01; // Kecepatan panning kamera
 
         function init() {
+            // Setup scene and camera
             scene = new THREE.Scene();
             scene.background = new THREE.Color(0xdddddd);
 
             camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 50000);
-            camera.position.set(0, 150, 300);
+            camera.position.set(0, 550, 900);
+
+            // Add lights
+            ambientLight = new THREE.AmbientLight(0xffffff, 1.0); // Default intensity 1
+            scene.add(ambientLight);
 
             hemisphereLight = new THREE.HemisphereLight(0xffffff, 0x444444, 1.0);
             hemisphereLight.position.set(0, 200, 0);
@@ -62,24 +99,37 @@
             directionalLight.position.set(0, 200, 100);
             scene.add(directionalLight);
 
+            // Renderer
             renderer = new THREE.WebGLRenderer({ antialias: true });
             renderer.setSize(window.innerWidth, window.innerHeight);
             document.body.appendChild(renderer.domElement);
 
+            // Orbit Controls
             const controls = new THREE.OrbitControls(camera, renderer.domElement);
             controls.addEventListener('change', render);
 
+            // Clock
             clock = new THREE.Clock();
 
+            // Load FBX model
             const fbxLoader = new THREE.FBXLoader();
             fbxLoader.load('./FPRumahAdat.fbx', (object) => {
-                object.scale.set(0.2, 0.2, 0.2); // Sesuaikan skala model jika terlalu besar/kecil
+                object.scale.set(0.2, 0.2, 0.2); // Scale model
                 scene.add(object);
 
+                // Jika terdapat animasi
                 if (object.animations.length > 0) {
                     mixer = new THREE.AnimationMixer(object);
-                    const action = mixer.clipAction(object.animations[0]);
-                    action.play();
+                    animationAction = mixer.clipAction(object.animations[0]);
+
+                    // Set animasi hanya berjalan satu kali
+                    animationAction.setLoop(THREE.LoopOnce); 
+                    animationAction.clampWhenFinished = true; // Biarkan berhenti di frame terakhir
+
+                    // Tambahkan event listener untuk mengetahui kapan animasi selesai
+                    mixer.addEventListener('finished', () => {
+                        console.log('Animation finished'); // Animasi selesai
+                    });
                 }
 
                 render();
@@ -87,22 +137,21 @@
                 console.error('Error loading FBX:', error);
             });
 
+
+            // Resize event
             window.addEventListener('resize', onWindowResize);
             animate();
-            addLightControls();
-        }
 
-        function onWindowResize() {
-            camera.aspect = window.innerWidth / window.innerHeight;
-            camera.updateProjectionMatrix();
-            renderer.setSize(window.innerWidth, window.innerHeight);
+            // Add animation and lighting controls
+            addAnimationControls();
+            addLightingControls();
         }
 
         function animate() {
             requestAnimationFrame(animate);
 
             const delta = clock.getDelta();
-            if (mixer) mixer.update(delta); // Update animasi jika ada
+            if (mixer) mixer.update(delta); // Update animation if exists
 
             renderer.render(scene, camera);
         }
@@ -111,22 +160,95 @@
             renderer.render(scene, camera);
         }
 
-        function addLightControls() {
-            const hemisphereIntensitySlider = document.getElementById('hemisphereIntensity');
-            hemisphereIntensitySlider.addEventListener('input', (e) => {
-                hemisphereLight.intensity = e.target.value;
+        function onWindowResize() {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        }
+
+        function animateCameraPanning() {
+        if (isPanning) {
+            cameraAngle += cameraSpeed; // Tambahkan sudut kamera berdasarkan kecepatan
+            if (cameraAngle >= Math.PI * 2) cameraAngle -= Math.PI * 2; // Reset sudut jika satu putaran penuh
+
+            // Hitung posisi kamera menggunakan lintasan melingkar
+            camera.position.x = cameraRadius * Math.cos(cameraAngle);
+            camera.position.z = cameraRadius * Math.sin(cameraAngle);
+            camera.position.y = 450; // Tetap di ketinggian tertentu
+
+            // Pastikan kamera selalu mengarah ke rumah (pusat scene)
+            camera.lookAt(0, 50, 0); // Anda bisa menyesuaikan nilai Y sesuai kebutuhan
+
+            requestAnimationFrame(animateCameraPanning); // Lanjutkan animasi panning
+            }
+        }
+
+        function addAnimationControls() {
+            const playButton = document.getElementById('playButton');
+            const stopButton = document.getElementById('stopButton');
+            const animationSpeedSlider = document.getElementById('animationSpeed');
+            const cameraSpeedSlider = document.getElementById('cameraSpeed');
+
+            playButton.addEventListener('click', () => {
+                if (animationAction) {
+                    animationAction.reset(); // Reset animasi ke awal
+                    animationAction.play(); // Jalankan animasi
+
+                    // Pastikan panning kamera dimulai
+                    if (!isPanning) {
+                        isPanning = true; // Set status panning kamera menjadi aktif
+                        animateCameraPanning(); // Mulai animasi panning kamera
+                    }
+                }
+            });
+
+
+            stopButton.addEventListener('click', () => {
+                if (animationAction) {
+                    animationAction.paused = true; // Pause animasi
+                }
+
+                isPanning = false; // Set status panning kamera menjadi tidak aktif
+                camera.position.copy(initialCameraPosition); // Reset posisi kamera ke awal
+                camera.lookAt(0, 0, 0); // Pastikan kamera tetap mengarah ke objek di tengah
+            });
+
+            animationSpeedSlider.addEventListener('input', (e) => {
+                const speed = parseFloat(e.target.value);
+                if (mixer) {
+                    mixer.timeScale = speed; // Adjust the animation speed
+                }
+            });
+
+            cameraSpeedSlider.addEventListener('input', (e) => {
+                cameraSpeed = parseFloat(e.target.value); // Perbarui kecepatan panning kamera
+            });
+
+        }
+
+        function addLightingControls() {
+            const ambientSlider = document.getElementById('ambientIntensity');
+            const hemisphereSlider = document.getElementById('hemisphereIntensity');
+            const ambientColorPicker = document.getElementById('ambientColor');
+            const hemisphereColorPicker = document.getElementById('hemisphereColor');
+
+            ambientSlider.addEventListener('input', (e) => {
+                ambientLight.intensity = parseFloat(e.target.value); // Update ambient light intensity
                 render();
             });
 
-            const directionalIntensitySlider = document.getElementById('directionalIntensity');
-            directionalIntensitySlider.addEventListener('input', (e) => {
-                directionalLight.intensity = e.target.value;
+            hemisphereSlider.addEventListener('input', (e) => {
+                hemisphereLight.intensity = parseFloat(e.target.value); // Update hemisphere light intensity
                 render();
             });
 
-            const directionalColorPicker = document.getElementById('directionalColor');
-            directionalColorPicker.addEventListener('input', (e) => {
-                directionalLight.color.set(e.target.value);
+            ambientColorPicker.addEventListener('input', (e) => {
+                ambientLight.color.set(e.target.value); // Update ambient light color
+                render();
+            });
+
+            hemisphereColorPicker.addEventListener('input', (e) => {
+                hemisphereLight.color.set(e.target.value); // Update hemisphere light color
                 render();
             });
         }
